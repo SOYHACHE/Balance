@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Control de Mercadería — Airi</title>
+<script src="https://unpkg.com/quagga@0.12.1/dist/quagga.min.js"></script>
+<style>
+  :root{
+    --bg:#f5f7fb; --card:#ffffff; --accent:#0b6efd; --muted:#6b7280;
+    --danger:#dc2626; --radius:10px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter, Arial, sans-serif;background:var(--bg);color:#111}
+  header{background:linear-gradient(90deg,var(--accent),#0747c9);color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  header h1{margin:0;font-size:1.05rem}
+  header .meta{font-size:0.9rem;opacity:0.95}
+  nav{display:flex;gap:8px;padding:10px;justify-content:center;background:transparent}
+  .btn{background:var(--accent);color:white;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+  .btn.ghost{background:transparent;border:1px solid rgba(0,0,0,0.08);color:#111}
+  .container{max-width:1100px;margin:16px auto;padding:0 12px}
+  .card{background:var(--card);border-radius:var(--radius);padding:12px;margin-bottom:12px;box-shadow:0 6px 20px rgba(10,20,40,0.04)}
+  .grid{display:grid;grid-template-columns:1fr 120px 120px 120px;gap:8px;align-items:center}
+  input, select {padding:8px;border-radius:8px;border:1px solid #e6eef8;font-size:0.95rem;width:100%}
+  .table-wrapper{overflow:auto;border-radius:8px;border:1px solid #e8eef8;margin-top:10px;max-height:52vh}
+  table{width:100%;border-collapse:collapse;font-size:0.95rem}
+  thead th{position:sticky;top:0;background:linear-gradient(90deg,var(--accent),#0a58d8);color:#fff;padding:10px}
+  th, td{padding:8px;border-bottom:1px solid #f1f5f9;text-align:center}
+  td.left{text-align:left;padding-left:12px}
+  .muted{color:var(--muted);font-size:0.9rem}
+  .actions{display:flex;gap:6px;justify-content:center}
+  .small{font-size:0.88rem}
+  .totals{display:flex;gap:12px;align-items:center}
+  .right{margin-left:auto}
+  .hidden{display:none}
+  @media(max-width:820px){
+    .grid{grid-template-columns:1fr 120px;row-gap:8px}
+    thead th, td{font-size:0.85rem;padding:6px}
+  }
+  /* Historial page */
+  .back{background:#eff6ff;border-radius:8px;padding:8px 10px;border:1px solid #dbeafe;cursor:pointer}
+  .danger{background:var(--danger);color:white;padding:8px 10px;border-radius:8px;border:none;cursor:pointer}
+  .entry{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:8px;border:1px solid #f1f5f9;margin-bottom:8px}
+  .entry .left{font-weight:500}
+  .centered{display:flex;flex-direction:column;gap:8px;align-items:center}
+    .viewport {
+    position: relative;
+    width: 320px; /* Ancho inicial */
+    height: 240px; /* Altura inicial */
+    overflow: hidden;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>📦 Control de Mercadería</h1>
+    <div class="muted small">Seleccioná Salón o Depósito.</div>
+  </div>
+  <div class="totals">
+    <div class="small">Productos: <strong id="totalProducts">0</strong></div>
+    <div class="small">Unidades totales: <strong id="totalUnits">0</strong></div>
+  </div>
+</header>
+
+<nav>
+  <button class="btn" onclick="showView('conteo')">➕ Conteo</button>
+  <button class="btn ghost" onclick="showView('historialGeneral')">🕒 Historial</button>
+  <button class="btn ghost" id="btnClearAll">🧹 Borrar todo</button>
+</nav>
+
+<main class="container">
+  <!-- VISTA: Conteo -->
+  <section id="conteo" class="card">
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <div style="min-width:180px">
+        <label class="small muted">Destino</label>
+        <select id="destinoSelect" title="Elegí si la entrada va a Salón o Depósito">
+          <option value="salon">Salón</option>
+          <option value="deposito">Depósito</option>
+        </select>
+      </div>
+
+      <div style="flex:1">
+        <label class="small muted">EAN</label>
+        <input id="ean" type="text" placeholder="Código de barras (EAN) — Enter para ir a Cantidad" />
+      </div>
+        <!-- Contenedor para la vista de la cámara -->
+      <div id="interactive" class="viewport" style="width:0px; height:0px; overflow:hidden;"></div>
+      <button class="btn ghost" id="scanBtn">Escanear</button>
+      <div style="width:150px">
+        <label class="small muted">Cantidad</label>
+        <input id="cantidad" type="number" placeholder="ej. 20" />
+      </div>
+      <div style="width:120px">
+        <label class="small muted">&nbsp;</label>
+        <button class="btn" id="addBtn">Agregar</button>
+      </div>
+      <div style="width:220px; margin-left:auto">
+        <label class="small muted">Buscar (EAN, PLU, Descripción)</label>
+        <input id="search" type="text" placeholder="Buscar..." />
+      </div>
+    </div>
+
+    <div class="table-wrapper" aria-live="polite">
+      <table>
+        <thead>
+          <tr>
+            <th>EAN</th><th>PLU</th><th>DESCRIPCIÓN</th><th>Salón</th><th>Depósito</th><th>Total</th><th>Acc.</th>
+          </tr>
+        </thead>
+        <tbody id="tablaProductos"></tbody>
+      </table>
+    </div>
+
+    <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+      <button class="btn" onclick="guardarSnapshot()">💾 Guardar Conteo</button>
+      <button class="btn ghost" id="exportJsonAll">📤 Exportar JSON</button>
+      <!-- Botón de Importar JSON -->
+      <input type="file" id="importJson" accept=".json" style="display: none;">
+      <button class="btn ghost" onclick="document.getElementById('importJson').click();">
+        ⬆️ Importar JSON
+      </button>
+      <div class="right muted small">Sugerencia: escaneá EAN y presioná Enter en Cantidad.</div>
+    </div>
+  </section>
+
+  <!-- VISTA: Historial de producto (opcion C - página aparte) -->
+  <section id="historialProducto" class="card hidden">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+      <button class="back" onclick="showView('conteo')">⬅ Volver al conteo</button>
+      <div style="flex:1">
+        <h3 id="histTitle" style="margin:0">Historial</h3>
+        <div class="muted small" id="histSub"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="small muted" id="histTotal">Total: 0</div>
+        <button class="danger" id="clearThisHistory">🗑 Borrar todo</button>
+      </div>
+    </div>
+
+    <div id="entriesList" style="margin-top:6px"></div>
+
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+      <input id="newEntryValue" type="number" placeholder="Agregar entrada (+/-)" style="flex:1;padding:8px;border-radius:8px;border:1px solid #e6eef8" />
+      <button class="btn" id="addEntryBtn">Agregar</button>
+    </div>
+  </section>
+
+  <!-- VISTA: Historial general de snapshots -->
+  <section id="historialGeneral" class="card hidden">
+    <h3 style="margin-top:0">Historial de Conteos Guardados</h3>
+    <div id="listaSnapshots"></div>
+  </section>
+</main>
+
+<script>
+/* ---------- Datos y persistencia ----------
+ products: array de productos con estructura:
+ {
+   ean: "123",
+   plu: "111",
+   detalle: "Yerba 1kg",
+   salon: [20,20,-2],
+   deposito: [100, -10]
+ }
+ conteos: array de snapshots guardados
+-------------------------------------*/
+let products = JSON.parse(localStorage.getItem('products_v2') || '[]');
+let conteos = JSON.parse(localStorage.getItem('conteos_v2') || '[]');
+
+const eanEl = document.getElementById('ean');
+const cantidadEl = document.getElementById('cantidad');
+const addBtn = document.getElementById('addBtn');
+const tablaProductos = document.getElementById('tablaProductos');
+const totalProductsEl = document.getElementById('totalProducts');
+const totalUnitsEl = document.getElementById('totalUnits');
+const searchEl = document.getElementById('search');
+const destinoSelect = document.getElementById('destinoSelect');
+
+const historialProducto = document.getElementById('historialProducto');
+const histTitle = document.getElementById('histTitle');
+const histSub = document.getElementById('histSub');
+const histTotal = document.getElementById('histTotal');
+const entriesList = document.getElementById('entriesList');
+const newEntryValue = document.getElementById('newEntryValue');
+const addEntryBtn = document.getElementById('addEntryBtn');
+const clearThisHistory = document.getElementById('clearThisHistory');
+
+const historialGeneral = document.getElementById('historialGeneral');
+const listaSnapshots = document.getElementById('listaSnapshots');
+
+const scanBtn = document.getElementById('scanBtn');
+let scanning = false;
+
+document.getElementById('btnClearAll').addEventListener('click', clearAllData);
+document.getElementById('exportJsonAll').addEventListener('click', ()=>download(JSON.stringify({products,conteos},null,2), 'datos_mercaderia.json','application/json'));
+
+eanEl.addEventListener('keydown', e=>{
+  if(e.key === 'Enter'){ e.preventDefault(); cantidadEl.focus(); }
+});
+cantidadEl.addEventListener('keydown', e=>{
+  if(e.key === 'Enter'){ e.preventDefault(); agregarPorDestino(); eanEl.focus(); }
+});
+addBtn.addEventListener('click', agregarPorDestino);
+searchEl.addEventListener('input', renderTable);
+
+scanBtn.addEventListener('click', () => {
+    if (scanning) {
+        Quagga.stop();
+        scanning = false;
+        scanBtn.textContent = 'Escanear';
+        // Oculta el viewport cuando se detiene el escaneo
+        document.getElementById('interactive').style.width = '0px';
+        document.getElementById('interactive').style.height = '0px';
+    } else {
+        startScanner();
+    }
+});
+
+function save(){
+  localStorage.setItem('products_v2', JSON.stringify(products));
+  localStorage.setItem('conteos_v2', JSON.stringify(conteos));
+}
+
+/* ---------- helpers de sumas ---------- */
+function sumArray(arr){ return (arr || []).reduce((s,v)=>s + Number(v || 0), 0); }
+function getTotals(){
+  const totalUnits = products.reduce((s,p)=> s + sumArray(p.salon) + sumArray(p.deposito), 0);
+  return { totalProducts: products.length, totalUnits };
+}
+
+/* ---------- render tabla principal ---------- */
+function renderTable(){
+  const q = (searchEl.value || '').trim().toLowerCase();
+
+  // Ordenar el array products alfabéticamente por la descripción
+  products.sort((a, b) => {
+    const detalleA = (a.detalle || '').toLowerCase();
+    const detalleB = (b.detalle || '').toLowerCase();
+    return detalleA.localeCompare(detalleB);
+  });
+
+  tablaProductos.innerHTML = '';
+  products.forEach((p, idx) => {
+    if(q){
+      const matches = (p.ean||'').toLowerCase().includes(q) || (p.plu||'').toLowerCase().includes(q) || (p.detalle||'').toLowerCase().includes(q);
+      if(!matches) return;
+    }
+    const salonTotal = sumArray(p.salon);
+    const depositoTotal = sumArray(p.deposito);
+    const total = salonTotal + depositoTotal;
+
+    const tr = document.createElement('tr');
+
+    tr.innerHTML = `
+      <td>${escapeHtml(p.ean)}</td>
+      <td ondblclick="startEdit(${idx}, 'plu')" class="left">${p.plu ? escapeHtml(p.plu) : `<input id="plu-${idx}" placeholder='PLU' onkeydown="pluKey(event,${idx})" onchange="savePlu(${idx}, this.value)"/>`}</td>
+      <td ondblclick="startEdit(${idx}, 'detalle')" class="left">${p.detalle ? escapeHtml(p.detalle) : `<input id="det-${idx}" placeholder='Descripción' onkeydown="detKey(event,${idx})" onchange="saveDet(${idx}, this.value)"/>`}</td>
+      <td style="cursor:pointer;color:#0a58d8;font-weight:600" onclick="openHistory(${idx}, 'salon')">${salonTotal}</td>
+      <td style="cursor:pointer;color:#0a58d8;font-weight:600" onclick="openHistory(${idx}, 'deposito')">${depositoTotal}</td>
+      <td>${total}</td>
+      <td class="actions">
+        <button class="btn ghost" onclick="promptAdjust(${idx})">✏️</button>
+        <button class="btn ghost" onclick="deleteProduct(${idx})">❌</button>
+      </td>
+    `;
+    tablaProductos.appendChild(tr);
+  });
+
+  const totals = getTotals();
+  totalProductsEl.textContent = totals.totalProducts;
+  totalUnitsEl.textContent = totals.totalUnits;
+}
+
+/* ---------- escape html ---------- */
+function escapeHtml(str=''){ return String(str).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+
+/* ---------- agregar según destino ---------- */
+function agregarPorDestino(){
+  const code = (eanEl.value || '').trim();
+  const qty = Number(cantidadEl.value || 0);
+  if(!code){ alert('Ingresá EAN'); eanEl.focus(); return; }
+  if(!qty){ alert('Ingresá una cantidad válida (puede ser positiva o negativa)'); cantidadEl.focus(); return; }
+  const destino = destinoSelect.value; // 'salon' o 'deposito'
+  let p = products.find(x => x.ean === code);
+  if(!p){
+    p = { ean: code, plu: '', detalle: '', salon: [], deposito: [] };
+    products.push(p);
+  }
+  p[destino].push(Number(qty));
+  save();
+  eanEl.value = cantidadEl.value = '';
+  renderTable();
+}
+
+/* ---------- editar PLU / detalle inline ---------- */
+function startEdit(idx, campo){
+  products[idx][campo] = ''; save(); renderTable();
+  const el = document.getElementById((campo==='plu' ? 'plu-' : 'det-') + idx);
+  if(el) el.focus();
+}
+function pluKey(e, idx){
+  if(e.key === 'Enter'){ e.preventDefault(); products[idx].plu = e.target.value.trim(); save(); renderTable(); eanEl.focus(); }
+}
+function detKey(e, idx){
+  if(e.key === 'Enter'){ e.preventDefault(); products[idx].detalle = e.target.value.trim(); save(); renderTable(); eanEl.focus(); }
+}
+function savePlu(idx, val){ products[idx].plu = (val||'').trim(); save(); renderTable(); }
+function saveDet(idx, val){ products[idx].detalle = (val||'').trim(); save(); renderTable(); }
+
+/* ---------- abrir historial de producto (pagina aparte) ---------- */
+let currentHist = { idx: null, sector: null }; // sector: 'salon'|'deposito'
+function openHistory(idx, sector){
+  currentHist.idx = idx; currentHist.sector = sector;
+  const p = products[idx];
+  showView('historialProducto');
+  histTitle.textContent = `Historial de ${sector === 'salon' ? 'SALÓN' : 'DEPÓSITO'} — ${p.detalle || p.ean}`;
+  histSub.textContent = `EAN: ${p.ean} · PLU: ${p.plu || '-'}`;
+  renderEntries();
+}
+
+/* render entries list */
+function renderEntries(){
+  entriesList.innerHTML = '';
+  const p = products[currentHist.idx];
+  const arr = p ? (p[currentHist.sector] || []) : [];
+  if(!p){ entriesList.innerHTML = '<div class="muted">Producto no encontrado</div>'; return; }
+  if(arr.length === 0) entriesList.innerHTML = '<div class="muted">No hay entradas en este sector.</div>';
+  arr.forEach((val, i) => {
+    const div = document.createElement('div');
+    div.className = 'entry';
+    div.innerHTML = `<div class="left">${val >= 0 ? '+'+val : val}</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="muted small">${new Date().toLocaleString()}</div>
+        <button class="btn ghost" onclick="deleteEntry(${i})">❌</button>
+      </div>`;
+    entriesList.appendChild(div);
+  });
+  histTotal.textContent = 'Total: ' + sumArray(arr);
+}
+
+/* agregar entrada desde historial */
+addEntryBtn.addEventListener('click', ()=>{
+  const v = Number(newEntryValue.value || 0);
+  if(!currentHist.idx === false && currentHist.idx === null){ alert('No hay producto seleccionado'); return; }
+  if(!v){ alert('Ingresá un número (positivo o negativo)'); newEntryValue.focus(); return; }
+  products[currentHist.idx][currentHist.sector].push(Number(v));
+  newEntryValue.value = '';
+  save();
+  renderEntries();
+  renderTable();
+});
+
+/* borrar entrada individual */
+function deleteEntry(i){
+  if(!confirm('¿Eliminar esta entrada?')) return;
+  products[currentHist.idx][currentHist.sector].splice(i,1);
+  save();
+  renderEntries();
+  renderTable();
+}
+
+/* borrar todo historial del sector */
+clearThisHistory.addEventListener('click', ()=>{
+  if(!confirm('¿Borrar todas las entradas de este sector para el producto?')) return;
+  products[currentHist.idx][currentHist.sector] = [];
+  save();
+  renderEntries();
+  renderTable();
+});
+
+/* prompt rapido para ajustar cantidad total (opcional) */
+function promptAdjust(idx){
+  const val = prompt('Ingresá un ajuste (ej: +5 o -2). Esto agregará una entrada al sector seleccionado actualmente:', '+0');
+  if(val === null) return;
+  const n = Number(val);
+  if(Number.isNaN(n)){ alert('Valor no válido'); return; }
+  const destino = destinoSelect.value;
+  products[idx][destino].push(n);
+  save();
+  renderTable();
+}
+
+/* borrar producto */
+function deleteProduct(idx){
+  if(!confirm('¿Eliminar producto y todo su historial?')) return;
+  products.splice(idx,1);
+  save();
+  renderTable();
+}
+
+/* guardar snapshot/ conteo completo */
+function guardarSnapshot(){
+  if(products.length === 0){ alert('No hay productos para guardar'); return; }
+  const fecha = new Date().toLocaleString();
+  // deep copy
+  const snapshot = { fecha, products: JSON.parse(JSON.stringify(products)) };
+  conteos.push(snapshot);
+  save();
+  alert('✅ Conteo guardado');
+}
+
+/* historial general de snapshots */
+function renderSnapshots(){
+  listaSnapshots.innerHTML = '';
+  if(conteos.length === 0){ listaSnapshots.innerHTML = '<div class="muted">No hay conteos guardados.</div>'; return; }
+  conteos.slice().reverse().forEach((c, iRev) => {
+    const i = conteos.length - 1 - iRev;
+    const div = document.createElement('div');
+    div.style.border = '1px solid #eef2ff';
+    div.style.padding = '8px';
+    div.style.borderRadius = '8px';
+    div.style.marginBottom = '8px';
+    const totalItems = c.products.length;
+    const totalUnits = c.products.reduce((s,p)=> s + sumArray(p.salon) + sumArray(p.deposito), 0);
+    div.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <strong>${escapeHtml(c.fecha)}</strong>
+        <div class="muted small">${totalItems} productos · ${totalUnits} unidades</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn" onclick="loadSnapshot(${i})">✏️ Cargar</button>
+        <button class="btn ghost" onclick="downloadSnapshot(${i})">📤 Exportar</button>
+        <button class="btn ghost" onclick="printSnapshot(${i})">🖨 Imprimir</button>
+        <button class="btn ghost" onclick="deleteSnapshot(${i})">🗑 Borrar</button>
+      </div>
+    </div>`;
+    listaSnapshots.appendChild(div);
+  });
+}
+function loadSnapshot(i){
+  if(!confirm('Cargar este conteo como conteo actual (reemplazará el actual)?')) return;
+  products = JSON.parse(JSON.stringify(conteos[i].products || []));
+  save();
+  showView('conteo');
+  renderTable();
+}
+function downloadSnapshot(i){
+  download(JSON.stringify(conteos[i],null,2), `conteo_${sanitizeFilename(conteos[i].fecha)}.json`, 'application/json');
+}
+function printSnapshot(i){
+  const c = conteos[i];
+  const w = window.open('', '_blank');
+  const rows = c.products.map(p=>`<tr><td>${escapeHtml(p.ean)}</td><td>${escapeHtml(p.plu)}</td><td>${escapeHtml(p.detalle)}</td><td>${sumArray(p.salon)}</td><td>${sumArray(p.deposito)}</td><td>${sumArray(p.salon)+sumArray(p.deposito)}</td></tr>`).join('');
+  w.document.write(`<html><head><title>Conteo ${escapeHtml(c.fecha)}</title></head><body><h2>Conteo ${escapeHtml(c.fecha)}</h2><table border="1" cellpadding="6" cellspacing="0"><thead><tr><th>EAN</th><th>PLU</th><th>DESCRIPCIÓN</th><th>Salón</th><th>Depósito</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+  w.document.close();
+  w.print();
+}
+function deleteSnapshot(i){
+  if(!confirm('Borrar este conteo?')) return;
+  conteos.splice(i,1);
+  save();
+  renderSnapshots();
+}
+
+/* ---------- navegación de vistas ---------- */
+function showView(name){
+  document.getElementById('conteo').classList.toggle('hidden', name !== 'conteo');
+  document.getElementById('historialProducto').classList.toggle('hidden', name !== 'historialProducto');
+  document.getElementById('historialGeneral').classList.toggle('hidden', name !== 'historialGeneral');
+  if(name === 'historialGeneral') renderSnapshots();
+}
+
+/* ---------- util / descargar ---------- */
+function download(content, filename, type='text/plain'){
+  const blob = new Blob([content], {type});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function sanitizeFilename(s){ return String(s).replace(/[: ]/g,'_').replace(/[^\w\-_.]/g,''); }
+
+/* ---------- borrar todo ---------- */
+function clearAllData(){
+  if(!confirm('⚠️ Esto borrará TODOS los productos y conteos guardados. ¿Continuar?')) return;
+  products = []; conteos = [];
+  save();
+  renderTable();
+  renderSnapshots();
+  alert('✅ Datos borrados.');
+}
+
+// Agregar esta función al script
+document.getElementById('importJson').addEventListener('change', handleFileImport);
+
+function handleFileImport(event) {
+  const file = event.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (data && data.products && data.conteos) {
+          products = data.products;
+          conteos = data.conteos;
+          save();
+          renderTable();
+          renderSnapshots();
+          alert('✅ Datos importados correctamente.');
+        } else {
+          alert('❌ El archivo JSON no tiene el formato correcto.');
+        }
+      } catch (error) {
+        alert('❌ Error al leer el archivo JSON: ' + error);
+      }
+    };
+    reader.readAsText(file);
+  }
+}
+
+function startScanner() {
+    Quagga.init({
+        inputStream: {
+            name: "Live",
+            type: "LiveStream",
+            target: document.querySelector('#interactive'),    // Or '#yourElement' (optional)
+            constraints: {
+                width: 320,
+                height: 240,
+                facingMode: "environment"  // or user
+            }
+        },
+        decoder: {
+            readers: ["ean_reader"]
+        }
+    }, function(err) {
+        if (err) {
+            console.log(err);
+            alert('Error al iniciar el escáner: ' + err.message);
+            return
+        }
+        console.log("Initialization finished. Ready to start");
+        Quagga.start();
+        scanning = true;
+        scanBtn.textContent = 'Detener';
+        // Muestra el viewport cuando se inicia el escaneo
+        document.getElementById('interactive').style.width = '320px';
+        document.getElementById('interactive').style.height = '240px';
+    });
+
+    Quagga.onDetected(function(result) {
+        eanEl.value = result.codeResult.code;
+        Quagga.stop();
+        scanning = false;
+        scanBtn.textContent = 'Escanear';
+        // Oculta el viewport después de la detección
+        document.getElementById('interactive').style.width = '0px';
+        document.getElementById('interactive').style.height = '0px';
+    });
+}
+
+/* ---------- init al cargar ---------- */
+window.addEventListener('load', ()=>{
+  renderTable();
+  renderSnapshots();
+  // si hay productos, mostrar conteo
+  if(products.length) showView('conteo');
+  // focus
+  eanEl.focus();
+  // calcular totales
+  updateTotalsUI();
+});
+
+/* actualizar totales UI */
+function updateTotalsUI(){
+  const t = getTotals();
+  totalProductsEl.textContent = t.totalProducts;
+  totalUnitsEl.textContent = t.totalUnits;
+}
+
+/* actualización después de cambios globales */
+function saveAndRefresh(){
+  save(); renderTable(); renderSnapshots(); updateTotalsUI();
+}
+
+/* reajuste: reusar save() y render */
+const origSave = save;
+save = function(){
+  origSave();
+  updateTotalsUI();
+};
+
+renderTable(); // primera render
+</script>
+</body>
+</html>
