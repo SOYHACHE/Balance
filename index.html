@@ -266,18 +266,34 @@ function escapeHtml(str=''){ return String(str).replace(/[&<>"']/g, m=>({'&':'&a
 /* ---------- agregar según destino ---------- */
 function agregarPorDestino(){
   const code = (eanEl.value || '').trim();
-  const qty = Number(cantidadEl.value || 0);
-  if(!code){ alert('Ingresá EAN'); eanEl.focus(); return; }
-  if(!qty){ alert('Ingresá una cantidad válida (puede ser positiva o negativa)'); cantidadEl.focus(); return; }
+  const qty = Number(cantidadEl.value);
+
+  if(!code){
+    alert('Ingresá EAN');
+    eanEl.focus();
+    return;
+  }
+
+  // ⬅️ CORRECCIÓN QUE PERMITE 0
+  if (isNaN(qty) || cantidadEl.value.trim() === "") {
+    alert('Ingresá una cantidad válida (puede ser 0, positiva o negativa)');
+    cantidadEl.focus();
+    return;
+  }
+
   const destino = destinoSelect.value; // 'salon' o 'deposito'
+
   let p = products.find(x => x.ean === code);
   if(!p){
     p = { ean: code, plu: '', detalle: '', salon: [], deposito: [] };
     products.push(p);
   }
-  p[destino].push(Number(qty));
+
+  p[destino].push(qty);
   save();
-  eanEl.value = cantidadEl.value = '';
+
+  eanEl.value = "";
+  cantidadEl.value = "";
   renderTable();
 }
 
